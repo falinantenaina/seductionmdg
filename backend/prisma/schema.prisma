@@ -1,0 +1,392 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  ADMIN
+  COMMERCIAL
+  FACTURIER
+  MAGASINIER
+  DISPATCHER
+  LIVREUR
+}
+
+enum OrderStatus {
+  BROUILLON
+  COMMANDE
+  EN_FACTURATION
+  FACTUREE
+  A_PREPARER
+  SORTIE_MAGASIN
+  EN_LIVRAISON
+  LIVREE
+  ANNULEE
+}
+
+enum InvoiceStatus {
+  BROUILLON
+  EMISE
+  PAYEE
+  ANNULEE
+}
+
+enum DeliveryStatus {
+  A_LIVRER
+  AFFECTEE
+  EN_COURS
+  LIVREE
+  ECHEC
+  ANNULEE
+}
+
+enum StockMovementType {
+  ENTREE
+  SORTIE
+  AJUSTEMENT
+  RESERVATION
+  ANNULATION_RESERVATION
+  RETOUR
+}
+
+enum Unit {
+  PIECE
+  KG
+  LITRE
+  METRE
+  CARTON
+  BOITE
+  PALET
+}
+
+enum NotificationType {
+  NOUVELLE_COMMANDE
+  FACTURE_VALIDE
+  SORTIE_MAGASIN
+  LIVRAISON_AFFECTEE
+  STATUT_COMMANDE
+  STOCK_FAIBLE
+  SYSTEME
+}
+
+// ---------------------------------------------------------------------------
+// Utilisateurs
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  phone        String?
+  role         Role
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  orders            Order[]
+  stockMovements    StockMovement[]
+  invoices          Invoice[]
+  notifications     Notification[]
+  auditLogs         AuditLog[]
+  deliveryPerson    DeliveryPerson?
+
+  @@index([role, isActive])
+}
+
+// ---------------------------------------------------------------------------
+// Catalogue
+// ---------------------------------------------------------------------------
+
+model Category {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  parentId    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children Category[] @relation("CategoryTree")
+  articles Article[]
+
+  @@index([parentId])
+}
+
+model Article {
+  id             String   @id @default(uuid())
+  sku            String   @unique
+  name           String
+  description    String?
+  categoryId     String?
+  unit           Unit     @default(PIECE)
+  price          Decimal  @db.Decimal(12, 2)
+  stockPhysical  Int      @default(0)
+  stockReserved  Int      @default(0)
+  alertThreshold Int      @default(0)
+  imageUrl       String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  category      Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  orderItems    OrderItem[]
+  movements     StockMovement[]
+  invoiceItems  InvoiceItem[]
+  deliveryItems DeliveryItem[]
+
+  @@index([categoryId, isActive])
+  @@index([name])
+}
+
+model StockMovement {
+  id             String            @id @default(uuid())
+  type           StockMovementType
+  articleId      String
+  orderId        String?
+  quantity       Int
+  previousPhysical Int
+  newPhysical    Int
+  previousReserved Int
+  newReserved    Int
+  userId         String
+  comment        String?
+  createdAt      DateTime          @default(now())
+
+  article Article @relation(fields: [articleId], references: [id], onDelete: Restrict)
+  order   Order?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([articleId, createdAt])
+  @@index([orderId])
+  @@index([type, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Clients et commandes
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id            String   @id @default(uuid())
+  name          String
+  contactName   String?
+  email         String?
+  phone         String?
+  address       String?
+  deliveryPlace String?
+  city          String?
+  notes         String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  orders   Order[]
+  invoices Invoice[]
+
+  @@index([name])
+}
+
+model Order {
+  id             String      @id @default(uuid())
+  orderNumber    String      @unique
+  customerId     String
+  commercialId   String
+  status         OrderStatus @default(BROUILLON)
+  subtotal       Decimal     @db.Decimal(12, 2)
+  total          Decimal     @db.Decimal(12, 2)
+  deliveryAddress String?
+  deliveryPlace  String?
+  recipientName  String?
+  recipientPhone String?
+  comments       String?
+  reservedAt     DateTime?
+  releasedAt     DateTime?
+  cancelledAt    DateTime?
+  cancelReason   String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  customer   Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  commercial User          @relation(fields: [commercialId], references: [id], onDelete: Restrict)
+  items      OrderItem[]
+  invoice    Invoice?
+  delivery   Delivery?
+  movements  StockMovement[]
+  notifications Notification[]
+
+  @@index([status, createdAt])
+  @@index([createdAt])
+  @@index([commercialId, status])
+  @@index([customerId])
+}
+
+model OrderItem {
+  id        String  @id @default(uuid())
+  orderId   String
+  articleId String
+  quantity  Int
+  unitPrice Decimal @db.Decimal(12, 2)
+  lineTotal Decimal @db.Decimal(12, 2)
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  article Article @relation(fields: [articleId], references: [id], onDelete: Restrict)
+
+  @@unique([orderId, articleId])
+  @@index([articleId])
+}
+
+// ---------------------------------------------------------------------------
+// Facturation
+// ---------------------------------------------------------------------------
+
+model Invoice {
+  id            String        @id @default(uuid())
+  invoiceNumber String        @unique
+  orderId       String        @unique
+  customerId    String
+  status        InvoiceStatus @default(EMISE)
+  issueDate     DateTime      @default(now())
+  dueDate       DateTime?
+  subtotal      Decimal       @db.Decimal(12, 2)
+  total         Decimal       @db.Decimal(12, 2)
+  notes         String?
+  paidAt        DateTime?
+  cancelReason  String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  order    Order         @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  customer Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  items    InvoiceItem[]
+  author   User?         @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  authorId String?
+
+  @@index([status, issueDate])
+  @@index([status, paidAt])
+  @@index([customerId])
+}
+
+model InvoiceItem {
+  id          String  @id @default(uuid())
+  invoiceId   String
+  articleId   String?
+  designation String
+  quantity    Int
+  unitPrice   Decimal @db.Decimal(12, 2)
+  lineTotal   Decimal @db.Decimal(12, 2)
+
+  invoice Invoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  article Article?   @relation(fields: [articleId], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId])
+}
+
+// ---------------------------------------------------------------------------
+// Livraisons
+// ---------------------------------------------------------------------------
+
+model DeliveryPerson {
+  id        String   @id @default(uuid())
+  userId    String?  @unique
+  name      String
+  phone     String
+  vehicle   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user       User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  deliveries Delivery[]
+
+  @@index([isActive])
+}
+
+model Delivery {
+  id               String         @id @default(uuid())
+  deliveryNumber   String         @unique
+  orderId          String         @unique
+  deliveryPersonId String?
+  status           DeliveryStatus @default(A_LIVRER)
+  scheduledAt      DateTime?
+  deliveredAt      DateTime?
+  instructions     String?
+  observations     String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  order          Order           @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  deliveryPerson DeliveryPerson? @relation(fields: [deliveryPersonId], references: [id], onDelete: SetNull)
+  items          DeliveryItem[]
+
+  @@index([status, scheduledAt])
+  @@index([deliveryPersonId, status])
+}
+
+model DeliveryItem {
+  id                String  @id @default(uuid())
+  deliveryId        String
+  articleId         String?
+  designation       String
+  quantity          Int
+  quantityDelivered Int?
+
+  delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  article  Article? @relation(fields: [articleId], references: [id], onDelete: SetNull)
+
+  @@index([deliveryId])
+}
+
+// ---------------------------------------------------------------------------
+// Transversal
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType @default(SYSTEME)
+  title     String
+  message   String
+  isRead    Boolean          @default(false)
+  orderId   String?
+  createdAt DateTime         @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order Order? @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  oldValue  Json?
+  newValue  Json?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([entity, entityId])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@index([action, createdAt])
+}
+
+model Sequence {
+  key       String   @id
+  value     Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
