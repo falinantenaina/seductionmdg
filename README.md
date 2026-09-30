@@ -37,6 +37,81 @@ npm install
 npm run dev                   # http://localhost:5173 (proxy /api → :4000)
 ```
 
+### 4. Build de production (frontend servi par le backend)
+
+Le build Vite est écrit dans **`backend/public/`** et servi directement par l'API (fichiers statiques + repli SPA) : une seule origine, aucun proxy nécessaire.
+
+```bash
+cd backend
+npm run build:all   # build du front (→ backend/public) puis build de l'API
+npm start           # http://localhost:4000 → interface + /api
+```
+
+- `npm run build:front` ne build que le frontend ; `npm run build` ne build que l'API.
+- Sans `backend/public/index.html`, l'API se comporte comme avant (404 JSON sur les routes inconnues).
+- Routage client : toute route `GET` hors `/api` renvoie `index.html` (`Cache-Control: no-cache`) ; les fichiers hashés de `assets/` sont mis en cache `immutable` ; `backend/public/` est ignoré par git.
+
+## Déploiement — o2switch (cPanel + Phusion Passenger)
+
+Le backend est prêt pour l'hébergement mutualisé **o2switch** : cPanel → *Setup Node.js App* (Application Manager), qui exécute l'application sous **Phusion Passenger**.
+
+- **Racine de l'application** : `backend/` (hors `public_html`).
+- **Fichier de démarrage** : `backend/app.js` — il **exporte** l'objet Express. Passenger gère l'écoute : ne jamais appeler `listen()` ni `npm start` côté serveur (l'entrée `dist/server.js` reste utilisable en local/VPS).
+- **Front + API sur la même origine** : `backend/public/` (build Vite) est servi par Apache ou Express, `/api` par Passenger. Si cPanel génère un `app.js` et un dossier `public/` par défaut, ils sont remplacés par les nôtres.
+
+### 1. Base de données
+
+1. cPanel → *PostgreSQL® Databases* : créer une base (**UTF8**) + un utilisateur, puis attacher l'utilisateur à la base.
+2. Noter l'URL : `postgresql://utilisateur:motdepasse@localhost:5432/nom_base`.
+3. o2switch fournit **PostgreSQL 10** : pris en charge par Prisma, et les migrations n'utilisent ni extension, ni fonction, ni trigger SQL (les UUID sont générés par Prisma côté client).
+
+### 2. Code et variables d'environnement
+
+1. Déposer le dépôt complet (backend **et** frontend — ce dernier nécessaire au build) hors `public_html`, par ex. `~/seduction` : *File Manager*, FTP, ou `git clone` depuis le Terminal cPanel.
+2. Créer `backend/.env` (modèle : `backend/.env.example`) :
+
+```bash
+DATABASE_URL="postgresql://utilisateur:motdepasse@localhost:5432/nom_base"
+JWT_SECRET="<64 caractères aléatoires>"     # ex. openssl rand -hex 32
+JWT_EXPIRES_IN="12h"
+FRONTEND_URL="https://mondomaine.tld"
+NODE_ENV="production"
+```
+
+`PORT` est ignoré sous Passenger (c'est Passenger qui écoute) ; `.env` est lu par rapport au dossier `backend/`, quel que soit le répertoire de travail.
+
+### 3. Application dans cPanel
+
+cPanel → *Setup Node.js App* → **Create Application** :
+
+| Champ | Valeur |
+|---|---|
+| Node.js version | 20 ou supérieur |
+| Application mode | Production (`NODE_ENV=production`) |
+| Application root | `seduction/backend` (relatif au home, hors `public_html`) |
+| Application URL | racine du domaine ou sous-domaine |
+| Application startup file | `app.js` |
+
+> L'application doit être servie à la **racine d'une origine** (domaine ou sous-domaine) : le front utilise des chemins absolus (`/assets/...`, `/api/...`) et n'est pas préfixable (ni `base` Vite, ni `basename` du routeur).
+
+### 4. Installation, build, migrations (Terminal cPanel ou SSH)
+
+```bash
+cd ~/seduction/frontend && npm install     # devDeps nécessaires au build du front
+cd ../backend && npm install               # inclut prisma (migrations) et tsx (seed)
+npm run build:all                          # front → backend/public, API → backend/dist
+npx prisma migrate deploy                  # applique les migrations
+npm run seed                               # jeu de démonstration (optionnel)
+```
+
+Puis **Restart** sur l'application cPanel. Journaux Passenger : `backend/logs/` (`tail -f` depuis le Terminal).
+
+### 5. HTTPS
+
+cPanel → *SSL/TLS Status* → **Run AutoSSL** (Let's Encrypt) : Helmet force HSTS et la CSP suppose HTTPS.
+
+Après chaque modification du code : `npm run build:all` puis **Restart**.
+
 ## Comptes de démonstration
 
 Mot de passe commun : **`Demo1234!`**
@@ -228,23 +303,9 @@ npm run test:watch # mode veille
 
 ```bash
 cd frontend
-npm run dev                   # http://localhost:5173 (proxy /api → :4000)
+npm test           # exécution unique
+npm run test:watch # mode veille
 ```
-
-### 4. Build de production (frontend servi par le backend)
-
-Le build Vite est écrit dans **`backend/public/`** et servi directement par l'API (fichiers statiques + repli SPA) : une seule origine, aucun proxy nécessaire.
-
-```bash
-cd backend
-npm run build:all   # build du front (→ backend/public) puis build de l'API
-npm start           # http://localhost:4000 → interface + /api
-```
-
-- `npm run build:front` ne build que le frontend ; `npm run build` ne build que l'API.
-- Sans `backend/public/index.html`, l'API se comporte comme avant (404 JSON sur les routes inconnues).
-- Routage client : toute route `GET` hors `/api` renvoie `index.html` (`Cache-Control: no-cache`) ; les fichiers hashés de `assets/` sont mis en cache `immutable` ; `backend/public/` est ignoré par git.
-
 
 `src/lib/utils.test.ts` (formats monnaie/dates, Decimals), `src/components/layout/nav.test.ts` (visibilité et contrôle d'accès par rôle, chemin le plus long), `status-badge.test.tsx` (libellés FR de tous les statuts), `charts.test.tsx` (histogramme, répartition, états vides), `button.test.tsx` (variants, spinner de chargement, rendu `asChild` — régression page blanche), `data-table.test.tsx` (cartes mobiles, colonne actions, squelette, vide, erreur), `ui.store.test.ts` et `header.test.tsx` (repli / masquage de la sidebar) — **49 tests**.
 

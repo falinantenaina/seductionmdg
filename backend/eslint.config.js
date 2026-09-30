@@ -10,6 +10,13 @@ export default tseslint.config(
     rules: { 'no-console': 'off' },
   },
   {
+    files: ['app.js'],
+    languageOptions: {
+      globals: { require: 'readonly', module: 'readonly', __dirname: 'readonly', process: 'readonly' },
+    },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
+  },
+  {
     languageOptions: {
       globals: { process: 'readonly', console: 'readonly' },
     },

@@ -1,5 +1,10 @@
-import 'dotenv/config';
+import path from 'node:path';
+import dotenv from 'dotenv';
 import { z } from 'zod';
+
+// .env résolu par rapport au projet (indépendant du cwd : requis sous Passenger).
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+
 
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL est requis'),
