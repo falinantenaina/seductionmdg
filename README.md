@@ -80,6 +80,9 @@ NODE_ENV="production"
 
 `PORT` est ignoré sous Passenger (c'est Passenger qui écoute) ; `.env` est lu par rapport au dossier `backend/`, quel que soit le répertoire de travail.
 
+> **Caractères spéciaux du mot de passe** : `#`, `)`, `!`, `@`, `:`, `/`, `?` doivent être *percent-encodés* dans l'URL, sinon Prisma renvoie `P1013: invalid port number` (`#` étant interprété comme début d'ancre URL).
+> `Q9qhd)3#iL!td9OV` → `Q9qhd%293%23iL%21td9OV` (`)`→`%29`, `#`→`%23`, `!`→`%21`). Le mot de passe réel sur le serveur ne change pas.
+
 ### 3. Application dans cPanel
 
 cPanel → *Setup Node.js App* → **Create Application** :
