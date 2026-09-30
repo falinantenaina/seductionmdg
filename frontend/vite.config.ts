@@ -16,6 +16,9 @@ export default defineConfig({
     },
   },
   build: {
+    // Le build est servi directement par l'API : backend/public
+    outDir: path.resolve(import.meta.dirname, '../backend/public'),
+    emptyOutDir: true,
     rolldownOptions: {
       output: {
         advancedChunks: {

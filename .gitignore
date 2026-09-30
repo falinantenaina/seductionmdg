@@ -5,6 +5,8 @@ node_modules/
 dist/
 dist-ssr/
 build/
+# Build Vite du frontend servi par le backend
+backend/public/
 .cache/
 
 # Environnement (secrets — jamais versionnés)

@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
@@ -40,7 +42,9 @@ export function createApp(): express.Express {
     next();
   });
 
+  // Limiteur global sur l'API uniquement (les fichiers statiques du front ne consomment pas le quota).
   app.use(
+    '/api',
     rateLimit({
       windowMs: 15 * 60 * 1000,
       max: isProd ? 600 : 5000,
@@ -85,8 +89,42 @@ export function createApp(): express.Express {
   app.use('/api/stats', statsRoutes);
   app.use('/api/audit', auditRoutes);
 
+  serveFrontend(app);
+
   app.use(notFoundHandler);
   app.use(errorHandler);
 
   return app;
+}
+
+// Sert le build Vite du frontend (backend/public) + repli SPA pour le routage client.
+function serveFrontend(app: express.Express): void {
+  const publicDir = path.resolve(__dirname, '../public');
+  const indexHtml = path.join(publicDir, 'index.html');
+
+  if (!fs.existsSync(indexHtml)) return;
+
+  app.use(
+    express.static(publicDir, {
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.html')) {
+          res.setHeader('Cache-Control', 'no-cache');
+        } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+          // Fichiers hashés par Vite : cache immutable.
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+      },
+    }),
+  );
+
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    if (req.path.startsWith('/api/')) return next();
+    if (path.extname(req.path)) return next();
+
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(indexHtml, { cacheControl: false }, (err) => {
+      if (err) next(err);
+    });
+  });
 }

@@ -228,9 +228,23 @@ npm run test:watch # mode veille
 
 ```bash
 cd frontend
-npm test           # exécution unique
-npm run test:watch # mode veille
+npm run dev                   # http://localhost:5173 (proxy /api → :4000)
 ```
+
+### 4. Build de production (frontend servi par le backend)
+
+Le build Vite est écrit dans **`backend/public/`** et servi directement par l'API (fichiers statiques + repli SPA) : une seule origine, aucun proxy nécessaire.
+
+```bash
+cd backend
+npm run build:all   # build du front (→ backend/public) puis build de l'API
+npm start           # http://localhost:4000 → interface + /api
+```
+
+- `npm run build:front` ne build que le frontend ; `npm run build` ne build que l'API.
+- Sans `backend/public/index.html`, l'API se comporte comme avant (404 JSON sur les routes inconnues).
+- Routage client : toute route `GET` hors `/api` renvoie `index.html` (`Cache-Control: no-cache`) ; les fichiers hashés de `assets/` sont mis en cache `immutable` ; `backend/public/` est ignoré par git.
+
 
 `src/lib/utils.test.ts` (formats monnaie/dates, Decimals), `src/components/layout/nav.test.ts` (visibilité et contrôle d'accès par rôle, chemin le plus long), `status-badge.test.tsx` (libellés FR de tous les statuts), `charts.test.tsx` (histogramme, répartition, états vides), `button.test.tsx` (variants, spinner de chargement, rendu `asChild` — régression page blanche), `data-table.test.tsx` (cartes mobiles, colonne actions, squelette, vide, erreur), `ui.store.test.ts` et `header.test.tsx` (repli / masquage de la sidebar) — **49 tests**.
 
@@ -264,6 +278,8 @@ npm run test:watch # mode veille
 | `npm run typecheck` | vérification TypeScript stricte |
 | `npm run lint` | analyse ESLint (backend) / oxlint (frontend) |
 | `npm run build` | compilation de production |
+| `npm run build:front` | build Vite du frontend → `backend/public` (backend) |
+| `npm run build:all` | frontend + API |
 | `npm test` | tests automatisés (base `seduction_test` côté backend) |
 | `npm run seed` | (re)jeu de données de démonstration |
 | `npx prisma migrate dev --name <nom>` | nouvelle migration |
